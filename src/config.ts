@@ -20,6 +20,7 @@ const schema = z.object({
   LINEAR_WEBHOOK_SECRET: z.string().default('replace_me'),
   LINEAR_OAUTH_SCOPES: z.string().default('read,write,app:mentionable,app:assignable'),
   LINEAR_STATE_SECRET: z.string().default('replace_me'),
+  LINEAR_API_SECRET: z.string().optional(),
   LINEAR_TOKEN_STORE_PATH: z.string().default(path.join(HOME, '.openclaw/state/linear-agent-bridge/tokens.json')),
   OPENCLAW_BIN: z.string().default('openclaw'),
   OPENCLAW_LINEAR_AGENT_ID: z.string().default('project-manager'),

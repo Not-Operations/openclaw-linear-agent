@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import {
   buildPrompt,
@@ -112,6 +113,34 @@ function buildExecutionPrompt(event: LinearWebhookEnvelope) {
 app.get('/health', async (_req, res) => {
   res.json({ ok: true, service: 'linear-agent-bridge' });
 });
+
+app.use('/api/v1', authorizeApi);
+
+
+function authorizeApi(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const configuredSecret = config.LINEAR_API_SECRET?.trim();
+  if (!configuredSecret) {
+    res.status(503).json({ ok: false, error: 'api secret not configured' });
+    return;
+  }
+
+  const providedSecret = req.header('x-api-key')?.trim();
+  if (!providedSecret) {
+    res.status(401).json({ ok: false, error: 'missing api key' });
+    return;
+  }
+
+  const expected = Buffer.from(configuredSecret);
+  const received = Buffer.from(providedSecret);
+  const isMatch = expected.length === received.length && timingSafeEqual(expected, received);
+
+  if (!isMatch) {
+    res.status(401).json({ ok: false, error: 'invalid api key' });
+    return;
+  }
+
+  next();
+}
 
 app.get('/api/v1/auth/status', async (_req, res) => {
   const status = await getAuthStatus();
