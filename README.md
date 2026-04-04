@@ -106,6 +106,26 @@ Or in production/systemd-managed mode:
 scripts/run-bridge-prod.sh
 ```
 
+## API authentication model
+
+All privileged bridge routes under `/api/v1/*` require a shared secret header:
+
+```http
+x-api-key: <LINEAR_API_SECRET>
+```
+
+This shared secret authenticates access to the bridge API. It does **not** identify a specific human caller by itself. Linear comments, issues, projects, and other write actions are still performed using the Linear OAuth identity currently installed in the bridge.
+
+Public/unauthenticated route:
+
+- `GET /health`
+
+Protected routes:
+
+- all `GET/POST/PATCH/DELETE` endpoints under `/api/v1/*`
+
+If `LINEAR_API_SECRET` is missing at runtime, the bridge returns `503` for `/api/v1/*` routes. If the header is missing or wrong, it returns `401`.
+
 ## Required configuration
 
 This project assumes you already have OpenClaw installed locally or on a server and that the `openclaw` CLI is available.
@@ -128,6 +148,7 @@ LINEAR_CLIENT_SECRET=...
 LINEAR_WEBHOOK_SECRET=generate-a-random-secret
 LINEAR_OAUTH_SCOPES=read,write,app:mentionable,app:assignable
 LINEAR_STATE_SECRET=generate-a-random-secret
+LINEAR_API_SECRET=generate-a-long-random-secret
 LINEAR_TOKEN_STORE_PATH=$HOME/.openclaw/state/linear-agent-bridge/tokens.json
 
 OPENCLAW_LINEAR_AGENT_ID=project-manager
@@ -148,6 +169,7 @@ OPENCLAW_GATEWAY_TOKEN=...
 - `LINEAR_REDIRECT_URI`: the exact callback URL registered in the Linear OAuth app.
 - `LINEAR_WEBHOOK_SECRET`: a random secret you generate and also configure in Linear webhook settings.
 - `LINEAR_STATE_SECRET`: a random secret you generate for OAuth state validation.
+- `LINEAR_API_SECRET`: a long random shared secret required by all `/api/v1/*` bridge clients via the `x-api-key` header.
 - `LINEAR_TOKEN_STORE_PATH`: private writable path for rotating Linear OAuth credentials.
 - `OPENCLAW_LINEAR_AGENT_ID`: the OpenClaw agent that should handle Linear-triggered work.
 - `ALLOW_AUTO_RUN`: use `false` during setup, then turn on when verified.
@@ -178,9 +200,15 @@ Bridge + CLI smoke tests:
 
 ```bash
 npm run test:smoke
-npm run test:api-smoke
+LINEAR_API_SECRET=your-shared-secret npm run test:api-smoke
 npm run test:auth-status
 npm run test:validation-smoke
+```
+
+Example direct API call:
+
+```bash
+curl -H "x-api-key: $LINEAR_API_SECRET" http://127.0.0.1:3001/api/v1/auth/status
 ```
 
 The main smoke path no longer depends on MCP tooling. The bridge and CLI validate independently.
@@ -207,7 +235,7 @@ git status --short
 npm run build
 npm run check
 npm run test:auth-status
-npm run test:api-smoke
+LINEAR_API_SECRET=your-shared-secret npm run test:api-smoke
 npm run test:validation-smoke
 ```
 

@@ -1,12 +1,19 @@
 const DEFAULT_BASE_URL = process.env.LINEAR_BRIDGE_BASE_URL || 'http://127.0.0.1:3001';
+const API_KEY = process.env.LINEAR_API_SECRET || process.env.LINEAR_BRIDGE_API_KEY;
 
 export async function apiFetch(path: string, init: RequestInit = {}) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> | undefined)
+  };
+
+  if (API_KEY && path.startsWith('/api/v1/')) {
+    headers['x-api-key'] = API_KEY;
+  }
+
   const res = await fetch(`${DEFAULT_BASE_URL}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers || {})
-    }
+    headers
   });
 
   const text = await res.text();
