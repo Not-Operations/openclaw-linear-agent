@@ -6,7 +6,16 @@
     "dev": "tsx watch src/server.ts",
     "start": "node --enable-source-maps dist/server.js",
     "build": "tsc -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "linear:health": "node --enable-source-maps dist/linear-health.js",
+    "cli:auth-status": "node --enable-source-maps dist/cli/linear.js auth status",
+    "test:smoke": "bash scripts/test-linear-setup.sh",
+    "test:auth-status": "node tests/auth-status.test.mjs",
+    "test:api-smoke": "bash tests/api-smoke.sh",
+    "test:validation-smoke": "bash tests/validation-smoke.sh"
+  },
+  "bin": {
+    "linear": "dist/cli/linear.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1",

@@ -1,45 +1,42 @@
-# Remaining env vars + user inputs
+# Release / deploy checklist
 
-## Required secrets / config
+## Required bridge env vars
 
+Set these in `~/.openclaw/.env` or your private deployment environment:
+
+- `LINEAR_BRIDGE_PORT`
+- `LINEAR_APP_BASE_URL`
+- `LINEAR_REDIRECT_URI`
+- `LINEAR_CLIENT_ID`
+- `LINEAR_CLIENT_SECRET`
 - `LINEAR_WEBHOOK_SECRET`
-- `LINEAR_API_KEY`
+- `LINEAR_OAUTH_SCOPES`
+- `LINEAR_STATE_SECRET`
+- `LINEAR_TOKEN_STORE_PATH`
+- `OPENCLAW_LINEAR_AGENT_ID`
+- `ALLOW_AUTO_RUN`
 
-## Required user decisions
+## Required operator steps
 
-- Final OpenClaw agent id to use (default scaffold: `linear-bridge`)
-- Dedicated agent workspace location
-- Which Linear team(s) should trigger the bridge
-- Which event types should trigger an agent run
-  - issue created?
-  - issue updated?
-  - comment created?
-  - status changed?
-- Whether the bridge should ever auto-post comments back to Linear
-- If auto-posting is enabled, which actor identity should be used
-- Loop prevention rule
-  - ignore comments authored by the bridge actor?
-  - require a command prefix like `@agent` or `/ai`?
-- Expected response style
-  - terse triage
-  - implementation plan
-  - customer-ready explanation
-  - ask clarifying questions only
+- Confirm OpenClaw is already installed and the `openclaw` CLI is available locally or on the target server.
+- Create a Linear OAuth app and copy the client id/secret.
+- Generate `LINEAR_WEBHOOK_SECRET` and `LINEAR_STATE_SECRET` as random secrets.
+- Set `LINEAR_APP_BASE_URL` and `LINEAR_REDIRECT_URI` to your real reachable bridge URLs.
+- Ensure `LINEAR_TOKEN_STORE_PATH` points at a private writable path.
+- Start the bridge and complete `/auth/linear/start`.
+- Verify with `npm run linear:health` and `linear auth status --json`.
 
-## Strongly recommended
+## Pre-push safety checks
 
-- Confirm webhook public URL / tunnel / reverse proxy
-- Confirm local service manager
-  - systemd user service?
-  - pm2?
-  - docker compose?
-- Confirm whether bridge data can live in `./data` or should move to a fixed host path
-- Confirm whether OpenClaw agent model should remain default `openai-codex/gpt-5.4`
+- `npm run build`
+- `npm run check`
+- `npm run test:auth-status`
+- `npm run test:api-smoke`
+- `npm run test:validation-smoke`
+- `git grep -nE '(LINEAR_CLIENT_SECRET|LINEAR_WEBHOOK_SECRET|LINEAR_STATE_SECRET|access_token|refresh_token|Bearer )' -- .`
 
-## Optional future enhancements
+## Security notes
 
-- Implement GraphQL comment posting to Linear
-- Add per-issue event deduplication by webhook delivery id
-- Add command parsing from issue comments
-- Add richer prompt templates by issue label/state/team
-- Add audit logs and redaction for webhook payload snapshots
+- Do not commit `.env` files, token stores, or `data/` captures.
+- The bridge binds to localhost by default; do not expose it publicly without additional access controls.
+- The token store is private runtime state, not public repo config.

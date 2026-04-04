@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 
@@ -6,6 +7,8 @@ const boolish = z
   .string()
   .optional()
   .transform((value) => value === 'true');
+
+const HOME = process.env.HOME || os.homedir();
 
 const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
@@ -17,10 +20,10 @@ const schema = z.object({
   LINEAR_WEBHOOK_SECRET: z.string().default('replace_me'),
   LINEAR_OAUTH_SCOPES: z.string().default('read,write,app:mentionable,app:assignable'),
   LINEAR_STATE_SECRET: z.string().default('replace_me'),
-  LINEAR_TOKEN_STORE_PATH: z.string().default('/home/kenny/.config/linear-agent/tokens.json'),
+  LINEAR_TOKEN_STORE_PATH: z.string().default(path.join(HOME, '.openclaw/state/linear-agent-bridge/tokens.json')),
   OPENCLAW_BIN: z.string().default('openclaw'),
   OPENCLAW_LINEAR_AGENT_ID: z.string().default('project-manager'),
-  OPENCLAW_WORKDIR: z.string().default('/home/kenny/.openclaw/workspace'),
+  OPENCLAW_WORKDIR: z.string().default(path.join(HOME, '.openclaw/workspace')),
   OPENCLAW_TIMEOUT_SECONDS: z.coerce.number().default(180),
   OPENCLAW_THINKING: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('low'),
   POST_TO_LINEAR: boolish.default(false),

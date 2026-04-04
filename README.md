@@ -1,92 +1,247 @@
-# OpenClaw Linear Agent Bridge
+# OpenClaw Linear Agent
 
-A small Node service that receives Linear agent/webhook events, forwards selected work to an OpenClaw agent via the official CLI, and preserves per-issue conversation continuity.
+OpenClaw Linear Agent is a bridge + CLI for working with Linear through an OpenClaw-managed app installation.
 
-## What it does
+It has two jobs:
 
-- exposes `GET /health`
-- exposes `POST /webhooks/linear`
-- verifies Linear webhook signatures
-- builds an execution prompt from the Linear event payload
-- invokes an OpenClaw agent with `openclaw agent --agent <id> --json`
-- persists `{ issueId -> sessionId }` so follow-ups continue the same OpenClaw conversation
-- supports Linear OAuth install/callback flows for app-based setups
-- writes local debug artifacts to `data/` for development
+1. **Bridge/server**: receives Linear webhooks, owns the Linear OAuth installation, refreshes Linear tokens, and calls Linear GraphQL as the installed app.
+2. **CLI**: gives humans and agents a command-line interface for reading and updating Linear resources through the bridge.
 
-## Why CLI invocation instead of direct gateway HTTP
+This project is designed so the default CLI workflow does **not** need to own raw Linear OAuth refresh tokens locally.
 
-This bridge intentionally uses the OpenClaw CLI rather than talking directly to the gateway's OpenAI-compatible HTTP endpoint.
+## Current capabilities
 
-Why:
+### Bridge
 
-- the CLI is the safest supported integration surface
-- it avoids handling the gateway bearer token inside this bridge
-- it keeps the bridge simpler and more portable
-- it lets OpenClaw own session semantics and JSON output formatting
+- `GET /health`
+- `GET /api/v1/auth/status`
+- `GET /api/v1/teams`
+- `GET /api/v1/users`
+- `GET /api/v1/issues/:identifier`
+- `POST /api/v1/issues`
+- `PATCH /api/v1/issues/:id`
+- `GET /api/v1/issues/:id/comments`
+- `POST /api/v1/issues/:id/comments`
+- `PATCH /api/v1/comments/:id`
+- `GET /api/v1/projects`
+- `POST /api/v1/projects`
+- `PATCH /api/v1/projects/:id`
+- `GET /api/v1/projects/:id/milestones`
+- `POST /api/v1/projects/:id/milestones`
+- `PATCH /api/v1/milestones/:id`
+- `POST /api/v1/relations`
+- `DELETE /api/v1/relations/:id`
+- `PATCH /api/v1/issues/:id/milestone`
+- Linear webhook handling via `POST /webhooks/linear`
+- Linear OAuth install/callback flow
+- canonical token storage + refresh
 
-## Status
+### CLI
 
-This project is a working bridge prototype, not a polished product. Expect to adapt prompt shaping, event filtering, persistence, and deployment details for your own environment.
+Current command surface:
+
+```bash
+linear auth status --json
+
+linear team list --json
+linear user list [--query <text>] --json
+linear project list --json
+
+linear issue get <identifier> --json
+linear issue create --team NOT --project "Operations" --title "..." --assignee-email you@example.com --state "Todo" --due-date 2026-04-30 --json
+linear issue update <issue-id> --assignee-email you@example.com --team NOT --state "In Progress" --json
+linear issue status list --team NOT --json
+linear issue milestone <issue-id|identifier> --milestone-id <id> --json
+
+linear comment list --issue <issue-id> --json
+linear comment add --issue <issue-id> --body "..." --json
+linear comment update <comment-id> --body "..." --json
+
+linear project create --name "CLI Project Smoke Test" --team NOT --lead-email you@example.com --start-date 2026-04-03 --target-date 2026-04-30 --json
+linear project update <project-id|project-name> --target-date 2026-05-05 --json
+linear project issues --project-name "Operations" --state "Todo" --team NOT --due-date-to 2026-04-30 --json
+
+linear milestone list --project "Operations" --json
+linear milestone create --project "CLI Project Smoke Test" --name "Phase 1" --target-date 2026-04-15 --json
+linear milestone update <milestone-id> --target-date 2026-04-18 --json
+
+linear relation add --issue-id NOT-99 --related-issue-id NOT-80 --type related --json
+linear relation remove <relation-id> --json
+```
+
+## Architecture
+
+### Default auth model
+
+- CLI authenticates to the bridge/OpenClaw runtime
+- bridge/OpenClaw authenticates to Linear
+- bridge owns Linear OAuth installation and token refresh lifecycle
+- CLI does not use the bridge token store as a public contract
+
+### Internal token storage
+
+The current bridge implementation stores rotating Linear app credentials in:
+
+- `~/.openclaw/state/linear-agent-bridge/tokens.json`
+
+This is an internal bridge implementation detail, not a public CLI auth contract.
 
 ## Quick start
 
 ```bash
-cp .env.example .env
 npm install
+npm run build
+npm run check
+```
+
+Start the bridge in development:
+
+```bash
 npm run dev
 ```
 
-Create or choose an OpenClaw agent, then point the bridge at it via `.env`:
+Or in production/systemd-managed mode:
 
 ```bash
-OPENCLAW_LINEAR_AGENT_ID=project-manager
+scripts/run-bridge-prod.sh
 ```
 
-## Recommended setup flow
+## Required configuration
 
-1. Create a dedicated OpenClaw agent for Linear-triggered work.
-2. Configure the `.env` values for your OpenClaw workspace and Linear app/webhook settings.
-3. Start the bridge locally.
-4. Point a Linear webhook or app callback flow at the bridge.
-5. Start with `ALLOW_AUTO_RUN=false` to verify signatures and payload shape safely.
-6. Turn on `ALLOW_AUTO_RUN=true` once prompts and filtering look sane.
+This project assumes you already have OpenClaw installed locally or on a server and that the `openclaw` CLI is available.
 
-## Environment variables
+### Private bridge env vars
 
-See `.env.example` for the full set. The important ones are:
+Set these in your private OpenClaw env file:
 
-- `LINEAR_BRIDGE_PORT`
-- `LINEAR_APP_BASE_URL`
-- `LINEAR_REDIRECT_URI`
-- `LINEAR_CLIENT_ID`
-- `LINEAR_CLIENT_SECRET`
-- `LINEAR_WEBHOOK_SECRET`
-- `LINEAR_STATE_SECRET`
-- `OPENCLAW_BIN`
-- `OPENCLAW_LINEAR_AGENT_ID`
-- `OPENCLAW_WORKDIR`
-- `ALLOW_AUTO_RUN`
-- `DATA_DIR`
+- `~/.openclaw/.env`
 
-## Development notes
+Recommended variables:
 
-- `data/` is intentionally local-only and should not be committed. It may contain webhook payloads, session ids, and model outputs.
-- `.env` should not be committed.
-- `node_modules/` and runtime artifacts should stay untracked.
+```bash
+LINEAR_BRIDGE_PORT=3001
 
-## Security notes
+LINEAR_APP_BASE_URL=https://your-bridge.example.com
+LINEAR_REDIRECT_URI=https://your-bridge.example.com/auth/linear/callback
+LINEAR_CLIENT_ID=...
+LINEAR_CLIENT_SECRET=...
+LINEAR_WEBHOOK_SECRET=generate-a-random-secret
+LINEAR_OAUTH_SCOPES=read,write,app:mentionable,app:assignable
+LINEAR_STATE_SECRET=generate-a-random-secret
+LINEAR_TOKEN_STORE_PATH=$HOME/.openclaw/state/linear-agent-bridge/tokens.json
 
-If you open-source your own deployment of this bridge, do **not** publish:
+OPENCLAW_LINEAR_AGENT_ID=project-manager
+ALLOW_AUTO_RUN=false
+```
+
+You may also need these in environments where the bridge talks to OpenClaw through an authenticated gateway:
+
+```bash
+OPENCLAW_GATEWAY_URL=...
+OPENCLAW_GATEWAY_TOKEN=...
+```
+
+### Where each value comes from
+
+- `LINEAR_CLIENT_ID` / `LINEAR_CLIENT_SECRET`: from your Linear OAuth app.
+- `LINEAR_APP_BASE_URL`: the public base URL where Linear can reach your bridge.
+- `LINEAR_REDIRECT_URI`: the exact callback URL registered in the Linear OAuth app.
+- `LINEAR_WEBHOOK_SECRET`: a random secret you generate and also configure in Linear webhook settings.
+- `LINEAR_STATE_SECRET`: a random secret you generate for OAuth state validation.
+- `LINEAR_TOKEN_STORE_PATH`: private writable path for rotating Linear OAuth credentials.
+- `OPENCLAW_LINEAR_AGENT_ID`: the OpenClaw agent that should handle Linear-triggered work.
+- `ALLOW_AUTO_RUN`: use `false` during setup, then turn on when verified.
+
+### What stays private at runtime
+
+Do **not** put rotating Linear access or refresh tokens in `.env`.
+Those are written by the bridge to the private token store at:
+
+- `LINEAR_TOKEN_STORE_PATH`
+
+## Validation and checks
+
+Build + typecheck:
+
+```bash
+npm run build
+npm run check
+```
+
+Token/Linear auth health:
+
+```bash
+npm run linear:health
+```
+
+Bridge + CLI smoke tests:
+
+```bash
+npm run test:smoke
+npm run test:api-smoke
+npm run test:auth-status
+npm run test:validation-smoke
+```
+
+The main smoke path no longer depends on MCP tooling. The bridge and CLI validate independently.
+
+## Security and privacy
+
+This project is meant to be publishable as open source, so deployment hygiene matters.
+
+### Do not commit or publish
 
 - `.env` files
 - OAuth tokens
+- refresh tokens
 - webhook secrets
-- runtime payload captures in `data/`
-- any logs containing issue bodies, comments, emails, internal URLs, or model responses
+- `data/` captures
+- logs containing issue bodies, comments, internal URLs, emails, or model output
 
-## Limitations / TODOs
+### Recommended checks before pushing code
 
-- outbound comment posting policy may need tightening depending on your loop-prevention strategy
-- event deduplication by webhook delivery id is not implemented yet
-- prompt shaping is intentionally simple and may need project-specific tuning
-- deployment/service-manager setup is left to the operator
+Run:
+
+```bash
+git status --short
+npm run build
+npm run check
+npm run test:auth-status
+npm run test:api-smoke
+npm run test:validation-smoke
+```
+
+Review diffs for accidental secrets:
+
+```bash
+git diff -- . ':(exclude)package-lock.json'
+```
+
+If you have ever stored secrets locally in tracked files, also grep for common leak patterns before publishing:
+
+```bash
+git grep -nE '(LINEAR_CLIENT_SECRET|LINEAR_WEBHOOK_SECRET|LINEAR_STATE_SECRET|access_token|refresh_token|Bearer )' -- .
+```
+
+### Current privacy posture
+
+- bridge secrets live in env, not committed config
+- rotating Linear credentials live in a private state path
+- CLI defaults to bridge-backed auth rather than local Linear token ownership
+- validation rejects malformed requests early before they become confusing downstream errors
+
+## Known limitations
+
+- milestone assignment currently relies on Linear enforcing project compatibility; preflight project-match checks could be improved
+- milestone resolution is by id today, not milestone name
+- some mutation routes would benefit from additional contract tests and mocked GraphQL tests
+- direct standalone CLI auth to Linear is not the default mode and is not implemented as the primary path
+
+## Repo direction
+
+This project is moving from “bridge prototype” toward a real open-source bridge + CLI product.
+
+See:
+
+- `docs/ARCHITECTURE.md`
+- `docs/CLI-PRD.md`

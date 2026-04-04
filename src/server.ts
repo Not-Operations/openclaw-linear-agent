@@ -13,7 +13,13 @@ import {
 } from './linear.js';
 import { createActionActivity, createErrorActivity, createResponseActivity, createThoughtActivity } from './linear-client.js';
 import { invokeOpenClaw } from './openclaw.js';
-import { loadSessions, saveLinearTokens, saveSession } from './store.js';
+import { loadSessions, saveSession } from './store.js';
+import { saveLinearTokens } from './linear-token.js';
+import { getAuthStatus } from './api/auth-status.js';
+import { apiAddComment, apiAssignIssueToMilestone, apiCreateIssue, apiCreateIssueRelation, apiCreateMilestone, apiCreateProject, apiDeleteIssueRelation, apiGetIssue, apiListComments, apiListMilestones, apiListProjectIssues, apiListProjects, apiListTeamStates, apiUpdateComment, apiUpdateIssue, apiUpdateMilestone, apiUpdateProject } from './api/issues.js';
+import { apiListTeams, apiListUsers } from './api/lookups.js';
+import { commentBodySchema, issueCreateSchema, issueMilestoneLinkSchema, issueRelationSchema, issueUpdateSchema, milestoneCreateSchema, milestoneUpdateSchema, projectCreateSchema, projectIssueListSchema, projectUpdateSchema } from './contracts/validation.js';
+import { parseOrThrow, sendError } from './api/http.js';
 
 const app = express();
 app.use('/webhooks/linear', express.raw({ type: '*/*', limit: '1mb' }));
@@ -105,6 +111,179 @@ function buildExecutionPrompt(event: LinearWebhookEnvelope) {
 
 app.get('/health', async (_req, res) => {
   res.json({ ok: true, service: 'linear-agent-bridge' });
+});
+
+app.get('/api/v1/auth/status', async (_req, res) => {
+  const status = await getAuthStatus();
+  res.status(status.ok ? 200 : 503).json(status);
+});
+
+app.get('/api/v1/teams', async (_req, res) => {
+  try {
+    res.json(await apiListTeams());
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/v1/users', async (req, res) => {
+  try {
+    const query = typeof req.query.query === 'string' ? req.query.query : undefined;
+    res.json(await apiListUsers(query));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/v1/issues/:identifier', async (req, res) => {
+  try {
+    res.json(await apiGetIssue(req.params.identifier));
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+  }
+});
+
+app.post('/api/v1/issues', async (req, res) => {
+  try {
+    const body = parseOrThrow(issueCreateSchema, req.body);
+    res.json(await apiCreateIssue(body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.patch('/api/v1/issues/:id', async (req, res) => {
+  try {
+    const body = parseOrThrow(issueUpdateSchema, req.body);
+    res.json(await apiUpdateIssue(req.params.id, body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/v1/issues/:id/comments', async (req, res) => {
+  try {
+    res.json(await apiListComments(req.params.id));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.post('/api/v1/issues/:id/comments', async (req, res) => {
+  try {
+    const body = parseOrThrow(commentBodySchema, req.body);
+    res.json(await apiAddComment(req.params.id, body.body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.patch('/api/v1/comments/:id', async (req, res) => {
+  try {
+    const body = parseOrThrow(commentBodySchema, req.body);
+    res.json(await apiUpdateComment(req.params.id, body.body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/v1/teams/:teamKey/states', async (req, res) => {
+  try {
+    res.json(await apiListTeamStates(req.params.teamKey));
+  } catch (error: any) {
+    res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+  }
+});
+
+app.post('/api/v1/relations', async (req, res) => {
+  try {
+    const body = parseOrThrow(issueRelationSchema, req.body);
+    res.json(await apiCreateIssueRelation(body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.delete('/api/v1/relations/:id', async (req, res) => {
+  try {
+    res.json(await apiDeleteIssueRelation(req.params.id));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/v1/projects', async (req, res) => {
+  try {
+    if (req.query.projectId || req.query.projectName || req.query.stateName) {
+      const query = parseOrThrow(projectIssueListSchema, {
+        projectId: typeof req.query.projectId === 'string' ? req.query.projectId : undefined,
+        projectName: typeof req.query.projectName === 'string' ? req.query.projectName : undefined,
+        stateName: typeof req.query.stateName === 'string' ? req.query.stateName : undefined,
+        assigneeId: typeof req.query.assigneeId === 'string' ? req.query.assigneeId : undefined,
+        teamKey: typeof req.query.teamKey === 'string' ? req.query.teamKey : undefined,
+        dueDateFrom: typeof req.query.dueDateFrom === 'string' ? req.query.dueDateFrom : undefined,
+        dueDateTo: typeof req.query.dueDateTo === 'string' ? req.query.dueDateTo : undefined
+      });
+      res.json(await apiListProjectIssues(query));
+      return;
+    }
+    res.json(await apiListProjects());
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.post('/api/v1/projects', async (req, res) => {
+  try {
+    const body = parseOrThrow(projectCreateSchema, req.body);
+    res.json(await apiCreateProject(body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.patch('/api/v1/projects/:id', async (req, res) => {
+  try {
+    const body = parseOrThrow(projectUpdateSchema, req.body);
+    res.json(await apiUpdateProject(req.params.id, body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/v1/projects/:id/milestones', async (req, res) => {
+  try {
+    res.json(await apiListMilestones(req.params.id));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.post('/api/v1/projects/:id/milestones', async (req, res) => {
+  try {
+    const body = parseOrThrow(milestoneCreateSchema, req.body);
+    res.json(await apiCreateMilestone({ ...body, projectId: req.params.id }));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.patch('/api/v1/milestones/:id', async (req, res) => {
+  try {
+    const body = parseOrThrow(milestoneUpdateSchema, req.body);
+    res.json(await apiUpdateMilestone(req.params.id, body));
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+app.patch('/api/v1/issues/:id/milestone', async (req, res) => {
+  try {
+    const body = parseOrThrow(issueMilestoneLinkSchema, req.body);
+    res.json(await apiAssignIssueToMilestone(req.params.id, body.projectMilestoneId));
+  } catch (error: any) {
+    sendError(res, error);
+  }
 });
 
 app.get('/auth/linear/start', async (_req, res) => {
