@@ -92,7 +92,10 @@ This is an internal bridge implementation detail, not a public CLI auth contract
 npm install
 npm run build
 npm run check
+npm link
 ```
+
+That installs the local CLI as the `linear` command from this repo.
 
 Start the bridge in development:
 
@@ -135,6 +138,14 @@ This project assumes you already have OpenClaw installed locally or on a server 
 Set these in your private OpenClaw env file:
 
 - `~/.openclaw/.env`
+
+The CLI now auto-loads environment variables in this order:
+
+1. local process environment
+2. project-local `.env` if present
+3. `~/.openclaw/.env`
+
+That means a person or agent can usually run `linear ...` directly without manually sourcing env first, as long as the required bridge variables live in `~/.openclaw/.env`.
 
 Recommended variables:
 
@@ -210,6 +221,16 @@ Example direct API call:
 ```bash
 curl -H "x-api-key: $LINEAR_API_SECRET" http://127.0.0.1:3001/api/v1/auth/status
 ```
+
+Example CLI usage after `npm link`:
+
+```bash
+linear auth status --json
+linear project list --json
+linear comment add --issue NOT-432 --body "hello from the linked CLI" --json
+```
+
+Because the CLI auto-loads `~/.openclaw/.env`, you do not need a duplicate repo `.env` just to use the command in a standard OpenClaw setup.
 
 The main smoke path no longer depends on MCP tooling. The bridge and CLI validate independently.
 
