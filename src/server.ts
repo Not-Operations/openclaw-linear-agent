@@ -28,7 +28,8 @@ app.use(express.json({ limit: '1mb' }));
 async function writeDebugFile(name: string, data: unknown) {
   await fs.mkdir(config.DATA_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const outFile = path.join(config.DATA_DIR, `${stamp}-${name}.json`);
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const outFile = path.join(config.DATA_DIR, `${stamp}-${safeName}.json`);
   await fs.writeFile(outFile, JSON.stringify(data, null, 2) + '\n', 'utf8');
 }
 
