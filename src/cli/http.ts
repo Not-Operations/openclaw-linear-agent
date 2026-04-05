@@ -2,7 +2,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 
-loadEnv();
 loadEnv({ path: path.join(os.homedir(), '.openclaw/.env'), override: false });
 
 const DEFAULT_BASE_URL = process.env.LINEAR_BRIDGE_BASE_URL || 'http://127.0.0.1:3001';
